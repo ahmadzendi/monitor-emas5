@@ -622,7 +622,9 @@ async def _run_bot():
     from telegram import Update
     from telegram.ext import ContextTypes
 
+    print("=== _run_bot() DIJALANKAN ===")
     TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
+    print("TELEGRAM_TOKEN:", TELEGRAM_TOKEN)
 
     async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Bot aktif!")
