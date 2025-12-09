@@ -644,15 +644,15 @@ async def _run_bot():
     app_telegram.add_handler(CommandHandler("atur", atur_handler))
     await app_telegram.run_polling()
 
-async def main():
-    # Mulai FastAPI server di background
-    config = uvicorn.Config(app, host="0.0.0.0", port=8000, log_level="info", loop="asyncio")
-    server = uvicorn.Server(config)
-    # Mulai Telegram bot
-    telegram_task = asyncio.create_task(_run_bot())
-    # Mulai FastAPI
-    fastapi_task = asyncio.create_task(server.serve())
-    await asyncio.gather(telegram_task, fastapi_task)
+# ... (semua kode FastAPI dan _run_bot() di atas)
+
+import threading
+import asyncio
+import uvicorn
+
+def run_fastapi():
+    uvicorn.run(app, host="0.0.0.0", port=8000)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    threading.Thread(target=run_fastapi, daemon=True).start()
+    asyncio.run(_run_bot())
