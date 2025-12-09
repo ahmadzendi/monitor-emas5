@@ -1,3 +1,4 @@
+import uvicorn
 import asyncio
 import os
 import json
@@ -616,14 +617,6 @@ async def websocket_endpoint(websocket: WebSocket):
     finally:
         active_connections.discard(websocket)
 
-import threading
-import asyncio
-
-def start_telegram_bot():
-    import nest_asyncio
-    nest_asyncio.apply()
-    asyncio.run(_run_bot())
-
 async def _run_bot():
     from telegram.ext import ApplicationBuilder, CommandHandler
     from telegram import Update
@@ -651,4 +644,15 @@ async def _run_bot():
     app_telegram.add_handler(CommandHandler("atur", atur_handler))
     await app_telegram.run_polling()
 
-threading.Thread(target=start_telegram_bot, daemon=True).start()
+async def main():
+    # Mulai FastAPI server di background
+    config = uvicorn.Config(app, host="0.0.0.0", port=8000, log_level="info", loop="asyncio")
+    server = uvicorn.Server(config)
+    # Mulai Telegram bot
+    telegram_task = asyncio.create_task(_run_bot())
+    # Mulai FastAPI
+    fastapi_task = asyncio.create_task(server.serve())
+    await asyncio.gather(telegram_task, fastapi_task)
+
+if __name__ == "__main__":
+    asyncio.run(main())
