@@ -6,6 +6,8 @@ from fastapi.responses import HTMLResponse
 from contextlib import asynccontextmanager
 import httpx
 from bs4 import BeautifulSoup
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 history = []
 last_buy = None
@@ -14,6 +16,9 @@ usd_idr_history = []
 
 update_event = asyncio.Event()
 usd_idr_update_event = asyncio.Event()
+
+treasury_info = "Belum ada info treasury."
+treasury_info_update_event = asyncio.Event()
 
 def format_rupiah(nominal):
     try:
@@ -58,12 +63,12 @@ async def api_loop():
                     selling_rate = int(data.get("selling_rate", 0))
                     updated_at = data.get("updated_at")
                     if updated_at and updated_at not in shown_updates:
-                        status = "➖ Tetap"
+                        status = "➖"
                         if last_buy is not None:
                             if buying_rate > last_buy:
-                                status = "🚀 Naik"
+                                status = "🚀"
                             elif buying_rate < last_buy:
-                                status = "🔻 Turun"
+                                status = "🔻"
                         row = {
                             "buying_rate": buying_rate,
                             "selling_rate": selling_rate,
@@ -128,9 +133,9 @@ html = """
             text-align: left;
         }
         th.profit, td.profit {
-            width: 100px;
-            min-width: 100px;
-            max-width: 120px;
+            width: 90px;
+            min-width: 80px;
+            max-width: 100px;
             white-space: nowrap;
             text-align: left;
         }
@@ -232,6 +237,29 @@ html = """
             0%   { transform: translateX(100vw); }
             100% { transform: translateX(-100vw); }
         }
+        #isiTreasury { 
+            white-space: pre-line; 
+            color: red;
+            font-weight: bold;
+            max-height: 376px;
+            overflow-y: auto;
+            scrollbar-width: none; 
+            -ms-overflow-style: none;  
+            word-break: break-word;
+        }
+        #isiTreasury::-webkit-scrollbar {
+            display: none; 
+        }
+        .dark-mode #isiTreasury {
+            color: #00E124; text-shadow: 1px 1px #00B31C;
+        }
+        #ingfo {
+            width: 248px;
+            border: 1px solid #ccc;
+            padding: 10px;
+            height: 378px;
+            overflow-y: auto;
+        }
     </style>
 </head>
 <body>
@@ -277,7 +305,7 @@ html = """
         </div>
     <div class="container-flex">
         <div>
-            <h3 style="display:block; margin-top:30px;">Harga USD/IDR Investing - Jangka Waktu 15 Menit</h3>
+            <h3 style="display:block; margin-top:30px;">Chart Harga USD/IDR Investing - Jangka Waktu 15 Menit</h3>
         <div style="overflow:hidden; height:370px; width:620px; border:1px solid #ccc; border-radius:6px;">
         <iframe 
             src="https://sslcharts.investing.com/index.php?force_lang=54&pair_ID=2138&timescale=900&candles=80&style=candles"
@@ -300,10 +328,21 @@ html = """
             </div>
         </div>
     </div>
-    <h3 style="display:block; margin-top:30px;">Kalender Ekonomi</h3>
-        <div style="width:630px; ">
-            <iframe src="https://sslecal2.investing.com?columns=exc_flags,exc_currency,exc_importance,exc_actual,exc_forecast,exc_previous&category=_employment,_economicActivity,_inflation,_centralBanks,_confidenceIndex&importance=3&features=datepicker,timezone,timeselector,filters&countries=5,37,48,35,17,36,26,12,72&calType=week&timeZone=27&lang=54" width="650" height="467" frameborder="0" allowtransparency="true" marginwidth="0" marginheight="0"></iframe><div class="poweredBy" style="font-family: Arial, Helvetica, sans-serif;"><span style="font-size: 11px;color: #333333;text-decoration: none;">Kalender Ekonomi Real Time dipersembahkan oleh <a href="https://id.investing.com" rel="nofollow" target="_blank" style="font-size: 11px;color: #06529D; font-weight: bold;" class="underline_link">Investing.com Indonesia</a>.</span></div>        
+    
+    <div class="container-flex">
+        <div>
+            <h3 style="display:block; margin-top:30px;">Kalender Ekonomi</h3>
+        <div style="overflow:hidden; height:370px; width:620px; border:1px solid #ccc; border-radius:6px;">
+        <iframe src="https://sslecal2.investing.com?columns=exc_flags,exc_currency,exc_importance,exc_actual,exc_forecast,exc_previous&category=_employment,_economicActivity,_inflation,_centralBanks,_confidenceIndex&importance=3&features=datepicker,timezone,timeselector,filters&countries=5,37,48,35,17,36,26,12,72&calType=week&timeZone=27&lang=54" width="650" height="467" frameborder="0" allowtransparency="true" marginwidth="0" marginheight="0"></iframe>
+        </div></div>
+        <div>
+            <h3>Sekilas Ingfo Treasury</h3>
+            <div id="ingfo" style="margin-top:0; padding-top:2px;">
+            <ul id="isiTreasury" style="list-style:none; padding-left:0;"></ul>
+            </div>
+        </div>
     </div>
+    
     <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
     <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
 
@@ -327,7 +366,7 @@ html = """
             var dataArr = history.map(function(d) {
                 return {
                     waktu: d.created_at,
-                    all: `Harga Beli: ${d.buying_rate} | Harga Jual: ${d.selling_rate} | Status: ${d.status || "➖"}`,
+                    all: `${d.status || "➖"} | Harga Beli: ${d.buying_rate} | Harga Jual: ${d.selling_rate}`,
                     jt20: d.jt20,
                     jt30: d.jt30
                 };
@@ -344,6 +383,7 @@ html = """
                 var data = JSON.parse(event.data);
                 if (data.history) updateTable(data.history);
                 if (data.usd_idr_history) updateUsdIdrPrice(data.usd_idr_history);
+                if (data.treasury_info !== undefined) updateTreasuryInfo(data.treasury_info);
             };
             ws.onclose = function() {
                 setTimeout(connectWS, 1000);
@@ -362,46 +402,56 @@ html = """
             }
         }
         
+        function updateTreasuryInfo(info) {
+            document.getElementById("isiTreasury").innerHTML = info;
+        }
+        
         function updateUsdIdrPrice(history) {
             const currentPriceEl = document.getElementById("currentPrice");
             const priceListEl = document.getElementById("priceList");
 
             function formatHargaIDR(str) {
-                str = str.trim();
-                let [angka, desimal] = str.split(".");
-                angka = angka.replace(/,/g, ".");
-                if (desimal !== undefined) {
-                    return angka + "," + desimal;
-                } else {
-                    return angka;
-                }
+                return str;
             }
-            let icon = "➖";
-            if (history.length > 1) {
-                let now = parseFloat(history[history.length - 1].price.replace(/,/g, ''));
-                let prev = parseFloat(history[history.length - 2].price.replace(/,/g, ''));
-                if (now > prev) icon = "🚀";
-                else if (now < prev) icon = "🔻";
+            function parseHarga(str) {
+                return parseFloat(str.trim().replace(/\./g, '').replace(',', '.'));
             }
-            if(history.length > 0) {
-                currentPriceEl.innerHTML = `<span id="currentPrice" >${formatHargaIDR(history[history.length - 1].price)}</span> <span>${icon}</span>`;
+            
+            const reversed = history.slice().reverse();
+                
+            let rowIconCurrent = "➖";
+            if (reversed.length > 1) {
+                let now = parseHarga(reversed[0].price);
+                let prev = parseHarga(reversed[1].price);
+                if (now > prev) rowIconCurrent = "🚀";
+                else if (now < prev) rowIconCurrent = "🔻";
             }
+            currentPriceEl.innerHTML = `<span id="currentPrice">${formatHargaIDR(reversed[0].price)}</span> <span>${rowIconCurrent}</span>`;
+
             priceListEl.innerHTML = "";
-            for (let i = history.length - 1; i >= 0; i--) {
+            for (let i = 0; i < reversed.length; i++) {
                 let rowIcon = "➖";
-                if (i < history.length - 1) {
-                    let now = parseFloat(history[i].price.replace(/,/g, ''));
-                    let prev = parseFloat(history[i+1].price.replace(/,/g, ''));
-                    if (now > prev) rowIcon = "🚀";
-                    else if (now < prev) rowIcon = "🔻";
-                } else if (i === history.length - 1) {
-                    rowIcon = icon;
+                if (i === 0 && reversed.length > 1) {
+                    let now = parseHarga(reversed[0].price);
+                    let prev = parseHarga(reversed[1].price);
+                    if (now > prev) rowIcon = "🟢";
+                    else if (now < prev) rowIcon = "🔴";
+                } else if (i < reversed.length - 1) {
+                    let now = parseHarga(reversed[i].price);
+                    let next = parseHarga(reversed[i+1].price);
+                    if (now > next) rowIcon = "🟢";
+                    else if (now < next) rowIcon = "🔴";
+                } else if (i === reversed.length - 1 && reversed.length > 1) {
+                    let now = parseHarga(reversed[i].price);
+                    let prev = parseHarga(reversed[i-1].price);
+                    if (now > prev) rowIcon = "🟢";
+                    else if (now < prev) rowIcon = "🔴";
                 }
                 const li = document.createElement("li");
-                li.textContent = formatHargaIDR(history[i].price) + " ";
+                li.textContent = formatHargaIDR(reversed[i].price) + " ";
                 const spanTime = document.createElement("span");
                 spanTime.className = "time";
-                spanTime.textContent = `(${history[i].time})`;
+                spanTime.textContent = `(${reversed[i].time})`;
                 li.appendChild(spanTime);
                 const iconSpan = document.createElement("span");
                 iconSpan.className = "price-icon";
@@ -411,7 +461,7 @@ html = """
                 priceListEl.appendChild(li);
             }
         }
-
+        
         function updateJam() {
             var now = new Date();
             var tgl = now.toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' });
@@ -461,6 +511,7 @@ async def websocket_endpoint(websocket: WebSocket):
     active_connections.add(websocket)
     last_sent_updated_at = None
     last_usd_idr_price = None
+    last_treasury_info = treasury_info
 
     if history:
         last_sent_updated_at = history[-1]["created_at"]
@@ -471,9 +522,9 @@ async def websocket_endpoint(websocket: WebSocket):
         try:
             val = int((20000000 / h["buying_rate"]) * h["selling_rate"] - 19315000)
             if val > 0:
-                return f"+{format_rupiah(val)} 🚀"
+                return f"+{format_rupiah(val)} 🟢"
             elif val < 0:
-                return f"-{format_rupiah(abs(val))} 🔻"
+                return f"-{format_rupiah(abs(val))} 🔴"
             else:
                 return "0 ➖"
         except Exception:
@@ -483,9 +534,9 @@ async def websocket_endpoint(websocket: WebSocket):
         try:
             val = int((30000000 / h["buying_rate"]) * h["selling_rate"] - 28980000)
             if val > 0:
-                return f"+{format_rupiah(val)} 🚀"
+                return f"+{format_rupiah(val)} 🟢"
             elif val < 0:
-                return f"-{format_rupiah(abs(val))} 🔻"
+                return f"-{format_rupiah(abs(val))} 🔴"
             else:
                 return "0 ➖"
         except Exception:
@@ -503,14 +554,16 @@ async def websocket_endpoint(websocket: WebSocket):
             }
             for h in history[-1441:]
         ],
-        "usd_idr_history": usd_idr_history
+        "usd_idr_history": usd_idr_history,
+        "treasury_info": treasury_info
     }))
 
     try:
         while True:
             wait_tasks = [
                 asyncio.create_task(update_event.wait()),
-                asyncio.create_task(usd_idr_update_event.wait())
+                asyncio.create_task(usd_idr_update_event.wait()),
+                asyncio.create_task(treasury_info_update_event.wait())
             ]
             done, pending = await asyncio.wait(wait_tasks, return_when=asyncio.FIRST_COMPLETED)
             for task in pending:
@@ -520,20 +573,25 @@ async def websocket_endpoint(websocket: WebSocket):
                 update_event.clear()
             if usd_idr_update_event.is_set():
                 usd_idr_update_event.clear()
+            if treasury_info_update_event.is_set():
+                treasury_info_update_event.clear()
 
             current_updated_at = history[-1]["created_at"] if history else None
             current_usd_idr_price = usd_idr_history[-1]["price"] if usd_idr_history else None
+            current_treasury_info = treasury_info
 
-            send_history = False
+            send_update = False
             if current_updated_at != last_sent_updated_at:
-                send_history = True
+                send_update = True
                 last_sent_updated_at = current_updated_at
-
             if current_usd_idr_price != last_usd_idr_price:
-                send_history = True
+                send_update = True
                 last_usd_idr_price = current_usd_idr_price
+            if current_treasury_info != last_treasury_info:
+                send_update = True
+                last_treasury_info = current_treasury_info
 
-            if send_history:
+            if send_update:
                 msg = {
                     "history": [
                         {
@@ -546,7 +604,8 @@ async def websocket_endpoint(websocket: WebSocket):
                         }
                         for h in history[-1441:]
                     ],
-                    "usd_idr_history": usd_idr_history
+                    "usd_idr_history": usd_idr_history,
+                    "treasury_info": treasury_info
                 }
                 await websocket.send_text(json.dumps(msg))
             else:
@@ -555,3 +614,40 @@ async def websocket_endpoint(websocket: WebSocket):
         pass
     finally:
         active_connections.discard(websocket)
+
+import threading
+import asyncio
+
+def start_telegram_bot():
+    import nest_asyncio
+    nest_asyncio.apply()
+    asyncio.run(_run_bot())
+
+async def _run_bot():
+    from telegram.ext import ApplicationBuilder, CommandHandler
+    from telegram import Update
+    from telegram.ext import ContextTypes
+
+    TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
+
+    async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await update.message.reply_text("Bot aktif!")
+
+    async def atur_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        global treasury_info
+        if context.args:
+            text = update.message.text.partition(' ')[2]
+            text = text.replace("  ", "&nbsp;&nbsp;")
+            text = text.replace("\n", "<br>")
+            treasury_info = text
+            treasury_info_update_event.set()
+            await update.message.reply_text("Info Treasury diubah.")
+        else:
+            await update.message.reply_text("Gunakan: /atur <kalimat info>")
+
+    app_telegram = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+    app_telegram.add_handler(CommandHandler("start", start_handler))
+    app_telegram.add_handler(CommandHandler("atur", atur_handler))
+    await app_telegram.run_polling()
+
+threading.Thread(target=start_telegram_bot, daemon=True).start()
