@@ -3,4 +3,4 @@ uvicorn[standard]
 httpx
 beautifulsoup4
 python-telegram-bot
-psycopg2
+nest_asyncio
