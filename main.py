@@ -1,13 +1,12 @@
 import asyncio
 import json
+import os
 from datetime import datetime, timedelta
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from contextlib import asynccontextmanager
 import httpx
 from bs4 import BeautifulSoup
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 history = []
 last_buy = None
@@ -105,16 +104,6 @@ async def usd_idr_loop():
         except Exception as e:
             print("Error in usd_idr_loop:", e)
             await asyncio.sleep(1)
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    task1 = asyncio.create_task(api_loop())
-    task2 = asyncio.create_task(usd_idr_loop())
-    yield
-    task1.cancel()
-    task2.cancel()
-
-app = FastAPI(lifespan=lifespan)
 
 html = """ 
 <!DOCTYPE html>
@@ -501,6 +490,8 @@ html = """
 </html>
 """
 
+app = FastAPI()
+
 @app.get("/", response_class=HTMLResponse)
 async def index():
     return HTMLResponse(html)
@@ -615,14 +606,16 @@ async def websocket_endpoint(websocket: WebSocket):
     finally:
         active_connections.discard(websocket)
 
-import os
-
+# --- Telegram Bot ---
 async def run_telegram_bot():
     from telegram.ext import ApplicationBuilder, CommandHandler
     from telegram import Update
     from telegram.ext import ContextTypes
 
     TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
+    if not TELEGRAM_TOKEN:
+        print("TELEGRAM_TOKEN not set!")
+        return
 
     async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Bot aktif!")
@@ -654,5 +647,4 @@ async def lifespan(app: FastAPI):
     task2.cancel()
     task3.cancel()
 
-# Hanya satu kali definisi app
 app = FastAPI(lifespan=lifespan)
