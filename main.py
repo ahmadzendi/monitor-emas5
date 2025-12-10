@@ -20,6 +20,9 @@ usd_idr_update_event = asyncio.Event()
 treasury_info = "Belum ada info treasury."
 treasury_info_update_event = asyncio.Event()
 
+# Simpan referensi telegram app untuk shutdown
+telegram_app = None
+
 # ==================== HELPER FUNCTIONS ====================
 def format_rupiah(nominal):
     try:
@@ -110,45 +113,86 @@ async def usd_idr_loop():
             await asyncio.sleep(1)
 
 # ==================== TELEGRAM BOT ====================
-async def run_telegram_bot():
+async def start_telegram_bot():
+    """Start Telegram bot dan return app instance untuk shutdown nanti"""
+    global telegram_app
+    
     try:
         from telegram.ext import ApplicationBuilder, CommandHandler
         from telegram import Update
         from telegram.ext import ContextTypes
     except ImportError:
-        print("python-telegram-bot not installed. Skipping Telegram bot.")
-        return
+        print("❌ python-telegram-bot not installed!")
+        print("   Install dengan: pip install python-telegram-bot")
+        return None
 
     TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
     if not TELEGRAM_TOKEN:
-        print("TELEGRAM_TOKEN not set! Skipping Telegram bot.")
-        return
+        print("❌ TELEGRAM_TOKEN not set!")
+        print("   Set dengan: export TELEGRAM_TOKEN='your_bot_token'")
+        return None
 
     async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        print("Start command received")
-        await update.message.reply_text("Bot aktif!")
+        print(f"✅ /start command dari user: {update.effective_user.id}")
+        await update.message.reply_text("🤖 Bot aktif! Gunakan /atur <teks> untuk mengubah info treasury.")
 
     async def atur_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        print("Atur command received")
         global treasury_info
-        if context.args:
-            text = update.message.text.partition(' ')[2]
+        print(f"✅ /atur command dari user: {update.effective_user.id}")
+        
+        # Ambil teks setelah /atur
+        text = update.message.text.partition(' ')[2]
+        
+        if text:
             text = text.replace("  ", "&nbsp;&nbsp;")
             text = text.replace("\n", "<br>")
             treasury_info = text
             treasury_info_update_event.set()
-            await update.message.reply_text("Info Treasury diubah.")
+            await update.message.reply_text("✅ Info Treasury berhasil diubah!")
         else:
-            await update.message.reply_text("Gunakan: /atur <kalimat info>")
+            await update.message.reply_text("❌ Gunakan: /atur <kalimat info>\n\nContoh: /atur Harga emas hari ini stabil")
 
     try:
-        app_telegram = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-        app_telegram.add_handler(CommandHandler("start", start_handler))
-        app_telegram.add_handler(CommandHandler("atur", atur_handler))
-        print("Telegram bot starting...")
-        await app_telegram.run_polling(drop_pending_updates=True)
+        print("🔄 Initializing Telegram bot...")
+        
+        # Build application
+        telegram_app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+        
+        # Add handlers
+        telegram_app.add_handler(CommandHandler("start", start_handler))
+        telegram_app.add_handler(CommandHandler("atur", atur_handler))
+        
+        # Initialize dan start secara manual (BUKAN run_polling!)
+        await telegram_app.initialize()
+        await telegram_app.start()
+        await telegram_app.updater.start_polling(
+            drop_pending_updates=True,
+            allowed_updates=["message"]
+        )
+        
+        print("✅ Telegram bot started successfully!")
+        print(f"   Bot token: {TELEGRAM_TOKEN[:10]}...{TELEGRAM_TOKEN[-5:]}")
+        return telegram_app
+        
     except Exception as e:
-        print(f"Error running Telegram bot: {e}")
+        print(f"❌ Error starting Telegram bot: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+async def stop_telegram_bot():
+    """Stop Telegram bot dengan benar"""
+    global telegram_app
+    
+    if telegram_app:
+        try:
+            print("🔄 Stopping Telegram bot...")
+            await telegram_app.updater.stop()
+            await telegram_app.stop()
+            await telegram_app.shutdown()
+            print("✅ Telegram bot stopped!")
+        except Exception as e:
+            print(f"❌ Error stopping Telegram bot: {e}")
 
 # ==================== HTML TEMPLATE ====================
 html = """
@@ -532,30 +576,50 @@ html = """
 </html>
 """
 
-# ==================== LIFESPAN (HARUS SEBELUM APP) ====================
+# ==================== LIFESPAN ====================
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print("Starting background tasks...")
+    print("=" * 50)
+    print("🚀 Starting application...")
+    print("=" * 50)
+    
+    # Start background tasks
     task1 = asyncio.create_task(api_loop())
     task2 = asyncio.create_task(usd_idr_loop())
-    task3 = asyncio.create_task(run_telegram_bot())
-    print("Background tasks started!")
+    print("✅ API loop started")
+    print("✅ USD/IDR loop started")
+    
+    # Start telegram bot (tidak pakai create_task karena sudah polling sendiri)
+    tg_app = await start_telegram_bot()
+    
+    print("=" * 50)
+    print("🎉 All services running!")
+    print("=" * 50)
+    
     yield
-    print("Shutting down background tasks...")
+    
+    # Shutdown
+    print("=" * 50)
+    print("🛑 Shutting down...")
+    print("=" * 50)
+    
     task1.cancel()
     task2.cancel()
-    task3.cancel()
-    # Tunggu task selesai
+    
+    # Stop telegram bot
+    await stop_telegram_bot()
+    
     try:
-        await asyncio.gather(task1, task2, task3, return_exceptions=True)
+        await asyncio.gather(task1, task2, return_exceptions=True)
     except:
         pass
-    print("Background tasks stopped!")
+    
+    print("✅ Application stopped!")
 
-# ==================== FASTAPI APP (HANYA SEKALI!) ====================
+# ==================== FASTAPI APP ====================
 app = FastAPI(lifespan=lifespan)
 
-# ==================== ROUTES (SETELAH APP DIDEFINISIKAN) ====================
+# ==================== ROUTES ====================
 @app.get("/", response_class=HTMLResponse)
 async def index():
     return HTMLResponse(html)
@@ -678,7 +742,7 @@ async def websocket_endpoint(websocket: WebSocket):
     finally:
         active_connections.discard(websocket)
 
-# ==================== MAIN (untuk development) ====================
+# ==================== MAIN ====================
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
