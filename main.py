@@ -1,6 +1,4 @@
-import uvicorn
 import asyncio
-import os
 import json
 from datetime import datetime, timedelta
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -334,7 +332,7 @@ html = """
     <div class="container-flex">
         <div>
             <h3 style="display:block; margin-top:30px;">Kalender Ekonomi</h3>
-        <div style="overflow:hidden; height:370px; width:620px; border:1px solid #ccc; border-radius:6px;">
+        <div style="overflow:hidden; height:100%; width:100%; border:1px solid #ccc; border-radius:6px;">
         <iframe src="https://sslecal2.investing.com?columns=exc_flags,exc_currency,exc_importance,exc_actual,exc_forecast,exc_previous&category=_employment,_economicActivity,_inflation,_centralBanks,_confidenceIndex&importance=3&features=datepicker,timezone,timeselector,filters&countries=5,37,48,35,17,36,26,12,72&calType=week&timeZone=27&lang=54" width="650" height="467" frameborder="0" allowtransparency="true" marginwidth="0" marginheight="0"></iframe>
         </div></div>
         <div>
@@ -617,14 +615,17 @@ async def websocket_endpoint(websocket: WebSocket):
     finally:
         active_connections.discard(websocket)
 
-async def _run_bot():
+from fastapi import FastAPI
+import nest_asyncio
+
+nest_asyncio.apply()
+
+async def run_telegram_bot():
     from telegram.ext import ApplicationBuilder, CommandHandler
     from telegram import Update
     from telegram.ext import ContextTypes
 
-    print("=== _run_bot() DIJALANKAN ===")
     TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
-    print("TELEGRAM_TOKEN:", TELEGRAM_TOKEN)
 
     async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Bot aktif!")
@@ -646,15 +647,14 @@ async def _run_bot():
     app_telegram.add_handler(CommandHandler("atur", atur_handler))
     await app_telegram.run_polling()
 
-# ... (semua kode FastAPI dan _run_bot() di atas)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    task1 = asyncio.create_task(api_loop())
+    task2 = asyncio.create_task(usd_idr_loop())
+    task3 = asyncio.create_task(run_telegram_bot())
+    yield
+    task1.cancel()
+    task2.cancel()
+    task3.cancel()
 
-import threading
-import asyncio
-import uvicorn
-
-def run_fastapi():
-    uvicorn.run(app, host="0.0.0.0", port=8000)
-
-if __name__ == "__main__":
-    threading.Thread(target=run_fastapi, daemon=True).start()
-    asyncio.run(_run_bot())
+app = FastAPI(lifespan=lifespan)
