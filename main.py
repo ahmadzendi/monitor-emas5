@@ -105,7 +105,7 @@ async def usd_idr_loop():
             print("Error in usd_idr_loop:", e)
             await asyncio.sleep(1)
 
-html = """ 
+html = """
 <!DOCTYPE html>
 <html>
 <head>
@@ -170,7 +170,6 @@ html = """
         #usdIdrRealtime {
             width: 248px;
             border: 1px solid #ccc;
-            # border-radius: 6px;
             padding: 10px;
             height: 370px;
             overflow-y: auto;
@@ -198,7 +197,6 @@ html = """
             color: #00E124 !important;
             font-weight: bold;
         }
-        
         #footerApp {
             width: 100%;
             overflow: hidden;
@@ -210,7 +208,6 @@ html = """
             z-index: 100;
             padding: 8px 0;
         }
-
         .marquee-text {
             display: inline-block;
             color: #F5274D;
@@ -221,7 +218,6 @@ html = """
             color: #B232B2;
             font-weight: bold;
         }
-
         @keyframes marquee {
             0%   { transform: translateX(100vw); }
             100% { transform: translateX(-100vw); }
@@ -606,6 +602,7 @@ async def websocket_endpoint(websocket: WebSocket):
     finally:
         active_connections.discard(websocket)
 
+# --- Telegram Bot ---
 async def run_telegram_bot():
     from telegram.ext import ApplicationBuilder, CommandHandler
     from telegram import Update
