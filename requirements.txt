@@ -3,4 +3,3 @@ uvicorn[standard]
 httpx
 beautifulsoup4
 python-telegram-bot==20.7
-nest_asyncio
