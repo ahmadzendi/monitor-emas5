@@ -329,7 +329,7 @@ html = """
             color: #00E124; text-shadow: 1px 1px #00B31C;
         }
         #ingfo {
-            width: 248px;
+            width: 218px;
             border: 1px solid #ccc;
             padding: 10px;
             height: 378px;
@@ -407,7 +407,7 @@ html = """
     <div class="container-flex">
         <div>
             <h3 style="display:block; margin-top:30px;">Kalender Ekonomi</h3>
-        <div style="overflow:hidden; height:100%; width:100%; border:1px solid #ccc; border-radius:6px;">
+        <div style="overflow:hidden; height:450px; width:100%; border:1px solid #ccc; border-radius:6px;">
         <iframe src="https://sslecal2.investing.com?columns=exc_flags,exc_currency,exc_importance,exc_actual,exc_forecast,exc_previous&category=_employment,_economicActivity,_inflation,_centralBanks,_confidenceIndex&importance=3&features=datepicker,timezone,timeselector,filters&countries=5,37,48,35,17,36,26,12,72&calType=week&timeZone=27&lang=54" width="650" height="467" frameborder="0" allowtransparency="true" marginwidth="0" marginheight="0"></iframe>
         </div></div>
         <div>
