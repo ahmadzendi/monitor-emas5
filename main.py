@@ -606,7 +606,6 @@ async def websocket_endpoint(websocket: WebSocket):
     finally:
         active_connections.discard(websocket)
 
-# --- Telegram Bot ---
 async def run_telegram_bot():
     from telegram.ext import ApplicationBuilder, CommandHandler
     from telegram import Update
@@ -618,9 +617,11 @@ async def run_telegram_bot():
         return
 
     async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        print("Start command received")
         await update.message.reply_text("Bot aktif!")
 
     async def atur_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        print("Atur command received")
         global treasury_info
         if context.args:
             text = update.message.text.partition(' ')[2]
