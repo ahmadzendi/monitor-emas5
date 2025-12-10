@@ -615,17 +615,14 @@ async def websocket_endpoint(websocket: WebSocket):
     finally:
         active_connections.discard(websocket)
 
-from fastapi import FastAPI
-import nest_asyncio
-
-nest_asyncio.apply()
+import os
 
 async def run_telegram_bot():
     from telegram.ext import ApplicationBuilder, CommandHandler
     from telegram import Update
     from telegram.ext import ContextTypes
 
-    TELEGRAM_TOKEN = "TOKEN_BOT_KAMU"
+    TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 
     async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Bot aktif!")
@@ -646,3 +643,16 @@ async def run_telegram_bot():
     app_telegram.add_handler(CommandHandler("start", start_handler))
     app_telegram.add_handler(CommandHandler("atur", atur_handler))
     await app_telegram.run_polling()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    task1 = asyncio.create_task(api_loop())
+    task2 = asyncio.create_task(usd_idr_loop())
+    task3 = asyncio.create_task(run_telegram_bot())
+    yield
+    task1.cancel()
+    task2.cancel()
+    task3.cancel()
+
+# Hanya satu kali definisi app
+app = FastAPI(lifespan=lifespan)
